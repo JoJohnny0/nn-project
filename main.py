@@ -1,7 +1,10 @@
+from typing import Literal
+
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 import numpy as np
+from numpy.typing import NDArray
 from scipy.io import loadmat
 import torch
 from torch.utils.data import DataLoader
@@ -26,11 +29,18 @@ batch_size: int = 32
 epochs: int = 150
 
 
-# Load data
-image = loadmat('data/pavia_university/PaviaU.mat')['paviaU']
-labels = loadmat('data/pavia_university/PaviaU_gt.mat')['paviaU_gt']
-#image  = np.load('data/indian_pine/indianpinearray.npy')
-#labels = np.load('data/indian_pine/IPgt.npy')
+# Select dataset
+dataset: Literal['Pavia University', 'Indian Pine'] = 'Pavia University'
+
+# Load dataset
+image: NDArray[np.uint16]
+labels: NDArray[np.uint8]
+if dataset == 'Pavia University':
+    image = loadmat('data/datasets/Pavia University/PaviaU.mat')['paviaU']
+    labels = loadmat('data/datasets/Pavia University/PaviaU_gt.mat')['paviaU_gt']
+else:
+    image  = np.load('data/datasets/Indian Pine/indianpinearray.npy')
+    labels = np.load('data/datasets/Indian Pine/IPgt.npy')
 
 train_loader: DataLoader[list[torch.Tensor]]
 val_loader: DataLoader[list[torch.Tensor]]
@@ -45,13 +55,13 @@ train_loader, val_loader, test_loader = get_loaders(image,
                                                     )
 
 # Initialize logger
-wandb_logger: WandbLogger = WandbLogger(project = 'CTA-Net Hyperspectral Classification', save_dir = 'wandb')
+wandb_logger: WandbLogger = WandbLogger(project = f'Hyperspectral Classification on {dataset} dataset', save_dir = 'data/wandb')
 wandb_logger.experiment.define_metric('*', step_metric = 'epoch')
 
 # Add best checkpoint callback
 save_best: ModelCheckpoint = ModelCheckpoint(monitor = 'val_avg_accuracy',
-                                             dirpath = 'checkpoints',
-                                             filename = 'cta-net-{epoch}',
+                                             dirpath = 'data/checkpoints',
+                                             filename = 'cta-net-epoch={epoch}',
                                              mode = 'max',
                                              save_weights_only = True
                                              )
