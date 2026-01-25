@@ -2,16 +2,18 @@
 Module for handling hyperspectral image datasets.
 
 Useful functions:
-    - get_balanced_loaders
+    - get_loaders
 """
 
+from math import ceil
 from typing import override, Self
 
 import numpy as np
 from numpy.typing import NDArray
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, Subset, TensorDataset
+import torchvision.transforms as T
 
 
 class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
@@ -25,8 +27,8 @@ class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         Initialize the hyperspectral dataset.
 
         Args:
-            image (NDArray[np.integer|np.floating]): Hyperspectral image data of shape (H, W, C).
-            labels (NDArray[np.integer]): Labels of shape (H, W), where 0 indicates unlabeled pixels.
+            image (NDArray[integer|floating]): Hyperspectral image data of shape (H, W, C).
+            labels (NDArray[integer]): Labels of shape (H, W), where 0 indicates unlabeled pixels.
             patch_size (int): Size of the square patch to extract around each pixel. Must be odd.
         """
 
@@ -78,35 +80,90 @@ class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         label: torch.Tensor = self.labels[x, y]
         
         return patch, label
+    
 
-
-def get_balanced_loaders(image: NDArray[np.integer|np.floating],
-                          labels: NDArray[np.integer],
-                          patch_size: int,
-                          train_samples_per_class: int,
-                          val_samples_per_class: int,
-                          batch_size: int
-                          ) -> tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]]:
+def augment_dataset(dataset: Dataset[tuple[torch.Tensor, torch.Tensor]], sigma: float) -> TensorDataset:
     """
-    Splits the dataset into training, validation, and test sets with the same number of samples per class in the training and validation sets.
+    Applies gaussian noise, random rotations and linear combinations to augment the dataset.
+    The gaussian noise will not be applied in the central 3x3 of the each patch.
 
     Args:
-        image (NDArray[np.integer|np.floating]): Hyperspectral image data of shape (H, W, C).
-        labels (NDArray[np.integer]): Labels of shape (H, W), where 0 indicates unlabeled pixels.
+        dataset (Dataset[tuple[Tensor, Tensor]]): The dataset to augment.
+        sigma (float): Standard deviation of the gaussian noise to add.
+    """
+
+    side: int = dataset[0][0].size(1)
+
+    # Mask for the gaussian noise
+    mask: torch.Tensor = torch.full_like(dataset[0][0], sigma)
+    border: int = (side - 3) // 2
+    mask[:, border : -border, border : -border] = 0.0
+
+    # Rotation transform
+    padding: int = ceil(side * (2**0.5 - 1) / 2)
+    reflect_rotation: T.Compose = T.Compose([
+        T.Pad(padding, padding_mode = 'reflect'),
+        T.RandomRotation(180, interpolation = T.InterpolationMode.BILINEAR),
+        T.CenterCrop(side)
+    ])
+
+    augmented_samples: list[torch.Tensor] = []
+    for x, _ in dataset:
+
+        augmented_samples.append(x)
+
+        # Gaussian noise
+        noise: torch.Tensor = torch.randn_like(x) * mask
+        augmented_samples.append(x + noise)
+
+        # Rotations
+        rotated_patch: torch.Tensor = reflect_rotation(x)
+        augmented_samples.append(rotated_patch)
+    
+    # Linear combinations
+    dataset_length: int = len(dataset)  # type: ignore
+    couples: NDArray[np.long] = np.random.choice(dataset_length, size = (dataset_length, 2))
+    for i, j in couples:
+        x1: torch.Tensor = dataset[i][0]
+        x2: torch.Tensor = dataset[j][0]
+        alpha: float = np.random.uniform()
+        new_x: torch.Tensor = alpha * x1 + (1 - alpha) * x2
+        augmented_samples.append(new_x)
+    
+    # Build augmented dataset
+    y: torch.Tensor = dataset[0][1]
+    augmented_dataset: TensorDataset = TensorDataset(torch.stack(augmented_samples), y.repeat(len(augmented_samples)))
+    return augmented_dataset    
+
+def get_loaders(image: NDArray[np.integer|np.floating],
+                labels: NDArray[np.integer],
+                patch_size: int,
+                train_samples_per_class: int,
+                val_samples_per_class: int,
+                sigma: float,
+                batch_size: int
+                ) -> tuple[DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]]]:
+    """
+    Splits and augments the dataset, returning data loaders for training, validation, and testing containing the specified number of samples per class.
+
+    Args:
+        image (NDArray[integer|floating]): Hyperspectral image data of shape (H, W, C).
+        labels (NDArray[integer]): Labels of shape (H, W), where 0 indicates unlabeled pixels.
         patch_size (int): Size of the square patch to extract around each pixel. Must be odd.
         train_samples_per_class (int): Number of training samples per class.
         val_samples_per_class (int): Number of validation samples per class.
+        sigma (float): Standard deviation of the gaussian noise to add for augmentation.
         batch_size (int): Batch size for the data loaders.
 
     Returns:
-        tuple[DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]], DataLoader[tuple[torch.Tensor, torch.Tensor]]]: Training, validation, and test datasets.
+        loaders (tuple[DataLoader[list[Tensor]], DataLoader[list[Tensor]], DataLoader[list[Tensor]]]): training, validation, and test data loaders.
     """
 
     full_dataset: HyperspectralDataset = HyperspectralDataset(image, labels, patch_size)
     num_classes: int = int(labels.max())
-    train_indices: list[int] = []
-    val_indices: list[int] = []
-    test_indices: list[int] = []
+    train_sets: list[TensorDataset] = []
+    val_sets: list[Subset[tuple[torch.Tensor, torch.Tensor]]] = []
+    test_sets: list[Subset[tuple[torch.Tensor, torch.Tensor]]] = []
 
     # Flatten labels for easier indexing
     all_labels: torch.Tensor = full_dataset.labels[full_dataset.indices[:, 0], full_dataset.indices[:, 1]]
@@ -122,18 +179,24 @@ def get_balanced_loaders(image: NDArray[np.integer|np.floating],
         train_end: int = train_samples_per_class
         val_end: int = train_end + val_samples_per_class
 
+        # Error if not enough samples
         if class_indices.size(0) < val_end + 1:
             error_msg: str = f"Not enough samples for class {c + 1} to allocate {train_samples_per_class} training and {val_samples_per_class} validation and at least 1 test sample.\n"
             error_msg += f"Available samples: {class_indices.size(0)}."
             raise ValueError(error_msg) 
+        
+        # Augment training set
+        train_set: Subset[tuple[torch.Tensor, torch.Tensor]] = Subset(full_dataset, class_indices[:train_end].tolist())
+        augmented_train_set: TensorDataset = augment_dataset(train_set, sigma)
 
-        train_indices.extend(class_indices[:train_end].tolist())
-        val_indices.extend(class_indices[train_end:val_end].tolist())
-        test_indices.extend(class_indices[val_end:].tolist())
+        # Append subsets to respective lists
+        train_sets.append(augmented_train_set)
+        val_sets.append(Subset(full_dataset, class_indices[train_end:val_end].tolist()))
+        test_sets.append(Subset(full_dataset, class_indices[val_end:].tolist()))
 
     # Create data loaders
-    train_loader: DataLoader[tuple[torch.Tensor, torch.Tensor]] = DataLoader(Subset(full_dataset, train_indices), batch_size = batch_size, shuffle = True)
-    val_loader: DataLoader[tuple[torch.Tensor, torch.Tensor]] = DataLoader(Subset(full_dataset, val_indices), batch_size = batch_size, shuffle = False)
-    test_loader: DataLoader[tuple[torch.Tensor, torch.Tensor]] = DataLoader(Subset(full_dataset, test_indices), batch_size = batch_size, shuffle = False)
+    train_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(train_sets), batch_size = batch_size, shuffle = True)
+    val_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(val_sets), batch_size = batch_size, shuffle = False)
+    test_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(test_sets), batch_size = batch_size, shuffle = False)
 
     return train_loader, val_loader, test_loader
