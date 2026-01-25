@@ -1,10 +1,12 @@
 from lightning.pytorch import Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.loggers import WandbLogger
 import numpy as np
 from scipy.io import loadmat
 import torch
 from torch.utils.data import DataLoader
 
-from typeguard import install_import_hook
+from typeguard import install_import_hook   # TODO: remove
 install_import_hook('modules')
 
 from modules.cta_net.cta_net import CTA_Lightning
@@ -21,7 +23,7 @@ heads: int = 2
 dropout: float = 0.1
 lr: float = 8e-5
 batch_size: int = 32
-epochs: int = 2 #150
+epochs: int = 150
 
 
 # Load data
@@ -42,6 +44,18 @@ train_loader, val_loader, test_loader = get_loaders(image,
                                                     batch_size = batch_size
                                                     )
 
+# Initialize logger
+wandb_logger: WandbLogger = WandbLogger(project = 'CTA-Net Hyperspectral Classification', save_dir = 'wandb')
+wandb_logger.experiment.define_metric('*', step_metric = 'epoch')
+
+# Add best checkpoint callback
+save_best: ModelCheckpoint = ModelCheckpoint(monitor = 'val_avg_accuracy',
+                                             dirpath = 'checkpoints',
+                                             filename = 'cta-net-{epoch}',
+                                             mode = 'max',
+                                             save_weights_only = True
+                                             )
+
 # Train model
 model: CTA_Lightning = CTA_Lightning(in_channels = image.shape[2],
                                      hidden_channels = hidden_channels,
@@ -51,6 +65,6 @@ model: CTA_Lightning = CTA_Lightning(in_channels = image.shape[2],
                                      dropout = dropout,
                                      lr = lr
                                      )
-trainer: Trainer = Trainer(max_epochs = epochs)
+trainer: Trainer = Trainer(max_epochs = epochs, logger = wandb_logger, callbacks = [save_best], log_every_n_steps = len(train_loader))
 trainer.fit(model, train_loader, val_loader)
-trainer.test(model, test_loader)
+trainer.test(model, test_loader, ckpt_path = 'best')
