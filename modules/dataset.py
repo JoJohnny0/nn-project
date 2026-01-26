@@ -6,6 +6,7 @@ Useful functions:
 """
 
 from math import ceil
+import os
 from typing import override, Self
 
 import numpy as np
@@ -201,8 +202,9 @@ def get_loaders(image: NDArray[np.integer|np.floating],
         test_sets.append(Subset(full_dataset, class_indices[val_end:].tolist()))
 
     # Create data loaders
-    train_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(train_sets), batch_size = batch_size, shuffle = True)
-    val_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(val_sets), batch_size = batch_size, shuffle = False)
-    test_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(test_sets), batch_size = batch_size, shuffle = False)
+    workers: int = os.cpu_count() or 1
+    train_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(train_sets), batch_size = batch_size, shuffle = True, num_workers = workers, persistent_workers = True)
+    val_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(val_sets), batch_size = batch_size, shuffle = False, num_workers = workers, persistent_workers = True)
+    test_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(test_sets), batch_size = batch_size, shuffle = False, num_workers = workers, persistent_workers = True)
 
     return train_loader, val_loader, test_loader
