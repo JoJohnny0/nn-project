@@ -42,7 +42,7 @@ class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         
         # Load data
         self.image: torch.Tensor = torch.from_numpy(image).permute(2, 0, 1).float()
-        self.labels: torch.Tensor = torch.from_numpy(labels)
+        self.labels: torch.Tensor = torch.from_numpy(labels).long()
 
         # Find valid indices
         self.indices: torch.Tensor = torch.nonzero(self.labels)

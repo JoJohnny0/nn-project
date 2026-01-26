@@ -3,7 +3,6 @@ from typing import Literal
 import lightning.pytorch as pl
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
-from networkx import center
 import numpy as np
 from numpy.typing import NDArray
 from scipy.io import loadmat
@@ -32,7 +31,7 @@ heads: int = 2
 dropout: float = 0.1
 lr: float = 8e-5
 batch_size: int = 32
-epochs: int = 3#150
+epochs: int = 150
 
 
 # Select dataset
