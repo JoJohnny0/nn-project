@@ -1,6 +1,6 @@
 from typing import Literal
 
-from lightning.pytorch import Trainer
+import lightning.pytorch as pl
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 import numpy as np
@@ -16,6 +16,10 @@ from modules.cta_net.cta_net import CTA_Lightning
 from modules.dataset import get_loaders
 
 
+# Set seed
+pl.seed_everything(42)
+
+
 # Hyperparameters
 patch_size: int = 15
 train_samples_per_class: int = 10
@@ -26,7 +30,7 @@ heads: int = 2
 dropout: float = 0.1
 lr: float = 8e-5
 batch_size: int = 32
-epochs: int = 150
+epochs: int = 3#150
 
 
 # Select dataset
@@ -75,6 +79,6 @@ model: CTA_Lightning = CTA_Lightning(in_channels = image.shape[2],
                                      dropout = dropout,
                                      lr = lr
                                      )
-trainer: Trainer = Trainer(max_epochs = epochs, logger = wandb_logger, callbacks = [save_best], log_every_n_steps = len(train_loader))
+trainer: pl.Trainer = pl.Trainer(max_epochs = epochs, logger = wandb_logger, callbacks = [save_best], log_every_n_steps = len(train_loader))
 trainer.fit(model, train_loader, val_loader)
 trainer.test(model, test_loader, ckpt_path = 'best')
