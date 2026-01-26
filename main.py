@@ -84,30 +84,30 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
                                             save_dir = 'data/wandb',
                                             # Parameters not logged by the trainer
                                             config = {'train_samples_per_class': train_samples_per_class,
-                                                    'val_samples_per_class': val_samples_per_class,
-                                                    'central_region_size': central_region_size,
-                                                    'batch_size': batch_size
-                                                    }
+                                                      'val_samples_per_class': val_samples_per_class,
+                                                      'central_region_size': central_region_size,
+                                                      'batch_size': batch_size
+                                                      }
                                             )
     wandb_logger.experiment.define_metric('*', step_metric = 'epoch')
 
     # Add best checkpoint callback
-    save_best: ModelCheckpoint = ModelCheckpoint(monitor = 'val_avg_accuracy',
-                                                dirpath = 'data/checkpoints',
-                                                filename = f'cta-net-epoch={{epoch}}-seed={seed}',
-                                                mode = 'max',
-                                                save_weights_only = True
-                                                )
+    save_best: ModelCheckpoint = ModelCheckpoint(monitor = 'val_overall_accuracy',
+                                                 dirpath = 'data/checkpoints',
+                                                 filename = f'cta-net-epoch={{epoch}}-seed={seed}',
+                                                 mode = 'max',
+                                                 save_weights_only = True
+                                                 )
 
     # Initialize model and trainer
     model: CTA_Lightning = CTA_Lightning(in_channels = image.shape[2],
-                                        hidden_channels = hidden_channels,
-                                        out_channels = int(labels.max()),
-                                        heads = heads,
-                                        window_size = patch_size,
-                                        dropout = dropout,
-                                        lr = lr
-                                        )
+                                         hidden_channels = hidden_channels,
+                                         out_channels = int(labels.max()),
+                                         heads = heads,
+                                         window_size = patch_size,
+                                         dropout = dropout,
+                                         lr = lr
+                                         )
     trainer: pl.Trainer = pl.Trainer(max_epochs = epochs, logger = wandb_logger, callbacks = save_best, log_every_n_steps = len(train_loader))
 
     # Train and test
