@@ -18,7 +18,7 @@ from modules.cta_net.cta_net import CTA_Lightning
 from modules.dataset import get_loaders
 
 
-def main(dataset: Literal['PaviaUniversity', 'IndianPine'], seed: int|None = None) -> None:
+def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = None) -> None:
     """
     Main function to train and evaluate CTA-Net on a hyperspectral image dataset.
     The results are logged using Weights & Biases.
@@ -119,7 +119,7 @@ if __name__ == '__main__':
 
     # Argument parser
     parser: ArgumentParser = ArgumentParser(description = "Train and evaluate CTA-Net on a hyperspectral image dataset.")
-    parser.add_argument('dataset', type = str, choices = ('PaviaUniversity', 'IndianPine'), help = "The dataset to use.")
+    parser.add_argument('dataset', type = str, choices = ('PaviaUniversity', 'IndianPines'), help = "The dataset to use.")
     parser.add_argument('--seed', type = int, help = "Random seed for reproducibility.")
     args: Namespace = parser.parse_args()
 
