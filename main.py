@@ -3,6 +3,7 @@ from typing import Literal
 import lightning.pytorch as pl
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
+from networkx import center
 import numpy as np
 from numpy.typing import NDArray
 from scipy.io import loadmat
@@ -25,6 +26,7 @@ patch_size: int = 15
 train_samples_per_class: int = 10
 val_samples_per_class: int = 5
 sigma: float = 0.1
+central_region_size: int = 3
 hidden_channels: int = 128
 heads: int = 2
 dropout: float = 0.1
@@ -55,6 +57,7 @@ train_loader, val_loader, test_loader = get_loaders(image,
                                                     train_samples_per_class = train_samples_per_class,
                                                     val_samples_per_class = val_samples_per_class,
                                                     sigma = sigma,
+                                                    central_region_size = central_region_size,
                                                     batch_size = batch_size
                                                     )
 

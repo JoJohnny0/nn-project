@@ -82,21 +82,25 @@ class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         return patch, label
     
 
-def augment_dataset(dataset: Dataset[tuple[torch.Tensor, torch.Tensor]], sigma: float) -> TensorDataset:
+def augment_dataset(dataset: Dataset[tuple[torch.Tensor, torch.Tensor]], sigma: float, central_region_size: int) -> TensorDataset:
     """
     Applies gaussian noise, random rotations and linear combinations to augment the dataset.
-    The gaussian noise will not be applied in the central 3x3 of the each patch.
+    The gaussian noise will not be applied in the central region of each patch.
 
     Args:
         dataset (Dataset[tuple[Tensor, Tensor]]): The dataset to augment.
         sigma (float): Standard deviation of the gaussian noise to add.
+        central_region_size (int): Size of the central region where no noise will be added during augmentation. Must be odd.
     """
+
+    if central_region_size % 2 == 0:
+        raise ValueError("Central region size must be odd.")
 
     side: int = dataset[0][0].size(1)
 
     # Mask for the gaussian noise
     mask: torch.Tensor = torch.full_like(dataset[0][0], sigma)
-    border: int = (side - 3) // 2
+    border: int = (side - central_region_size) // 2
     mask[:, border : -border, border : -border] = 0.0
 
     # Rotation transform
@@ -141,6 +145,7 @@ def get_loaders(image: NDArray[np.integer|np.floating],
                 train_samples_per_class: int,
                 val_samples_per_class: int,
                 sigma: float,
+                central_region_size: int,
                 batch_size: int
                 ) -> tuple[DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]]]:
     """
@@ -153,6 +158,7 @@ def get_loaders(image: NDArray[np.integer|np.floating],
         train_samples_per_class (int): Number of training samples per class.
         val_samples_per_class (int): Number of validation samples per class.
         sigma (float): Standard deviation of the gaussian noise to add for augmentation.
+        central_region_size (int): Size of the central region where no noise will be added during augmentation. Must be odd.
         batch_size (int): Batch size for the data loaders.
 
     Returns:
@@ -187,7 +193,7 @@ def get_loaders(image: NDArray[np.integer|np.floating],
         
         # Augment training set
         train_set: Subset[tuple[torch.Tensor, torch.Tensor]] = Subset(full_dataset, class_indices[:train_end].tolist())
-        augmented_train_set: TensorDataset = augment_dataset(train_set, sigma)
+        augmented_train_set: TensorDataset = augment_dataset(train_set, sigma, central_region_size)
 
         # Append subsets to respective lists
         train_sets.append(augmented_train_set)
