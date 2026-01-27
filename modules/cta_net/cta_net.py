@@ -11,7 +11,7 @@ from lightning.pytorch import LightningModule
 import torch
 import torch.nn as nn
 from torch.optim.adam import Adam
-from torchmetrics.classification import MulticlassAccuracy, MulticlassCohenKappa
+from torchmetrics.classification import MulticlassAccuracy
 
 from modules.cta_net.attention import AttentionBlock
 from modules.cta_net.ct_mixed import CTBlock
@@ -78,14 +78,17 @@ class CTA_Lightning(LightningModule):
 
         self.model: CTA_Net = CTA_Net(in_channels, hidden_channels, out_channels, heads, window_size, dropout)
         self.loss: nn.CrossEntropyLoss = nn.CrossEntropyLoss()
-        self.avg_accuracy: MulticlassAccuracy = MulticlassAccuracy(out_channels)
-        self.overall_accuracy: MulticlassAccuracy = MulticlassAccuracy(out_channels, average = 'micro')
-        self.kappa: MulticlassCohenKappa = MulticlassCohenKappa(out_channels)
+        self.accuracy: MulticlassAccuracy = MulticlassAccuracy(out_channels, average = 'micro')
 
     @override
     def forward(self: Self, x: torch.Tensor) -> torch.Tensor:
 
         return self.model(x)
+    
+    @override
+    def predict_step(self: Self, batch: list[torch.Tensor]) -> torch.Tensor:
+
+        return self(batch[0]).argmax(dim = 1)
     
     def step(self: Self, batch: list[torch.Tensor], stage: Literal['train', 'val', 'test']) -> torch.Tensor:
 
@@ -97,14 +100,10 @@ class CTA_Lightning(LightningModule):
 
         # Compute metrics
         loss: torch.Tensor = self.loss(preds, target)
-        avg_accuracy: torch.Tensor = self.avg_accuracy(preds, target)
-        overall_accuracy: torch.Tensor = self.overall_accuracy(preds, target)
-        kappa: torch.Tensor = self.kappa(preds, target)
+        accuracy: torch.Tensor = self.accuracy(preds, target)
 
         self.log(f'{stage}_loss', loss, prog_bar = True)
-        self.log(f'{stage}_avg_accuracy', avg_accuracy, prog_bar = True)
-        self.log(f'{stage}_overall_accuracy', overall_accuracy, prog_bar = True)
-        self.log(f'{stage}_kappa', kappa, prog_bar = True)
+        self.log(f'{stage}_accuracy', accuracy, prog_bar = True)
 
         return loss
     

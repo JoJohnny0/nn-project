@@ -5,11 +5,15 @@ import kagglehub
 import lightning.pytorch as pl
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
+import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 from scipy.io import loadmat
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import torch
 from torch.utils.data import DataLoader
+from torchmetrics.functional import accuracy, cohen_kappa
+import wandb
 
 from typeguard import install_import_hook # TODO: remove before release
 install_import_hook('modules')
@@ -32,12 +36,12 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
     patch_size: int = 15
     train_samples_per_class: int = 10
     val_samples_per_class: int = 5
-    sigma: float = 0.1
+    sigma: float = 0.01
     central_region_size: int = 3
 
     # Model Hyperparameters
     hidden_channels: int = 128
-    heads: int = 2
+    heads: int = 4
 
     # Training Hyperparameters
     dropout: float = 0.1
@@ -99,9 +103,10 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
                                                  )
 
     # Initialize model and trainer
+    n_classes: int = int(labels.max())
     model: CTA_Lightning = CTA_Lightning(in_channels = image.shape[2],
                                          hidden_channels = hidden_channels,
-                                         out_channels = int(labels.max()),
+                                         out_channels = n_classes,
                                          heads = heads,
                                          window_size = patch_size,
                                          dropout = dropout,
@@ -111,8 +116,31 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
 
     # Train and test
     trainer.fit(model, train_loader, val_loader)
-    trainer.test(model, test_loader, ckpt_path = 'best')
+    preds: torch.Tensor = torch.concat(trainer.predict(model, test_loader, ckpt_path = 'best'))  # type: ignore
+
+    # Test metrics
+    targets: torch.Tensor = torch.concat([batch[1] for batch in test_loader])
+
+    metrics: dict[str, float] = {'Overall Accuracy': accuracy(preds, targets, task = 'multiclass', average = 'micro', num_classes = n_classes).item(),
+                                 'Average Accuracy': accuracy(preds, targets, task = 'multiclass', average = 'macro', num_classes = n_classes).item(),
+                                 'Kappa': cohen_kappa(preds, targets, task = 'multiclass', num_classes = n_classes).item()
+                                 }
+    conf_matrix: NDArray[np.int64] = confusion_matrix(targets, preds)
+    for i, class_acc in enumerate(conf_matrix.diagonal() / conf_matrix.sum(axis = 1)):
+        metrics[f'Class {i + 1} Accuracy'] = class_acc.item()
+    disp: ConfusionMatrixDisplay = ConfusionMatrixDisplay(confusion_matrix = conf_matrix)
+    disp.plot()
+    plt.tight_layout()
+
+    # Log metrics and confusion matrix
+    wandb_logger.experiment.log(metrics)
+    wandb_logger.experiment.log({'Confusion Matrix': wandb.Image(plt.gcf())})
+    plt.close()
     wandb_logger.experiment.finish()
+
+    # Print metrics
+    for key, value in metrics.items():
+        print(f"{key}: {value:.4f}")
 
 
 if __name__ == '__main__':
