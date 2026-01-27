@@ -48,7 +48,7 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
 
     # Set random seed
     if seed is not None:
-        pl.seed_everything(seed)
+        pl.seed_everything(seed, workers = True)
 
 
     # Download dataset if needed
@@ -92,10 +92,9 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
     wandb_logger.experiment.define_metric('*', step_metric = 'epoch')
 
     # Add best checkpoint callback
-    save_best: ModelCheckpoint = ModelCheckpoint(monitor = 'val_overall_accuracy',
+    save_best: ModelCheckpoint = ModelCheckpoint(monitor = 'val_loss',
                                                  dirpath = 'data/checkpoints',
                                                  filename = f'cta-net-epoch={{epoch}}-seed={seed}',
-                                                 mode = 'max',
                                                  save_weights_only = True
                                                  )
 
