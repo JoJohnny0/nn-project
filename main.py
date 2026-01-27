@@ -47,12 +47,12 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
     dropout: float = 0.1
     lr: float = 8e-5
     batch_size: int = 32
-    epochs: int = 150
+    epochs: int = 50    #150
 
 
     # Set random seed
     if seed is not None:
-        pl.seed_everything(seed, workers = True)
+        pl.seed_everything(seed)
 
 
     # Download dataset if needed
