@@ -20,6 +20,8 @@ import torchvision.transforms as T
 class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
     """
     Class to handle hyperspectral image datasets.
+
+    Call set_normalization(mean, std) to apply per-channel normalization.
     """
 
     @override
@@ -48,17 +50,30 @@ class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         # Find valid indices
         self.indices: torch.Tensor = torch.nonzero(self.labels)
         
-        # Normalize
-        mean: torch.Tensor = self.image.mean(dim = (1, 2), keepdim = True)
-        std: torch.Tensor = self.image.std(dim = (1, 2), keepdim = True)
-        self.image = (self.image - mean) / std
-        
         # Padding
         pad: int = patch_size // 2
         self.image = F.pad(self.image,  (pad, pad, pad, pad), mode = 'reflect')
 
         # Make labels start from 0
         self.labels = self.labels - 1
+
+        # Optional normalization (per-channel)
+        self.mean: torch.Tensor|None = None
+        self.std: torch.Tensor|None = None
+
+    def set_normalization(self: Self, mean: torch.Tensor, std: torch.Tensor, eps: float = 1e-6) -> None:
+        """
+        Set per-channel normalization stats.
+
+        Args:
+            mean (Tensor): Mean per channel.
+            std (Tensor): Std per channel.
+            eps (float): Small value to avoid division by zero in case of zero std.
+        """
+
+        self.mean = mean.view(-1, 1, 1)
+        print(std.dtype)
+        self.std = std.view(-1, 1, 1).clamp(min = eps)
         
     def __len__(self: Self) -> int:
         """
@@ -76,6 +91,10 @@ class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
 
         # Extract patch centered at (x, y) (padding already applied)
         patch: torch.Tensor = self.image[:, x : x + self.patch_size, y : y + self.patch_size]
+
+        # Apply normalization if set
+        if self.mean is not None and self.std is not None:
+            patch = (patch - self.mean) / self.std
         
         # Get label
         label: torch.Tensor = self.labels[x, y]
@@ -147,7 +166,8 @@ def get_loaders(image: NDArray[np.integer|np.floating],
                 val_samples_per_class: int,
                 sigma: float,
                 central_region_size: int,
-                batch_size: int
+                batch_size: int,
+                normalize: bool = True
                 ) -> tuple[DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]]]:
     """
     Splits and augments the dataset, returning data loaders for training, validation, and testing containing the specified number of samples per class.
@@ -161,6 +181,7 @@ def get_loaders(image: NDArray[np.integer|np.floating],
         sigma (float): Standard deviation of the gaussian noise to add for augmentation.
         central_region_size (int): Size of the central region where no noise will be added during augmentation. Must be odd.
         batch_size (int): Batch size for the data loaders.
+        normalize (bool): If True, applies per-channel z-scaling based on training samples.
 
     Returns:
         loaders (tuple[DataLoader[list[Tensor]], DataLoader[list[Tensor]], DataLoader[list[Tensor]]]): training, validation, and test data loaders.
@@ -168,13 +189,11 @@ def get_loaders(image: NDArray[np.integer|np.floating],
 
     full_dataset: HyperspectralDataset = HyperspectralDataset(image, labels, patch_size)
     num_classes: int = int(labels.max())
-    train_sets: list[TensorDataset] = []
-    val_sets: list[Subset[tuple[torch.Tensor, torch.Tensor]]] = []
-    test_sets: list[Subset[tuple[torch.Tensor, torch.Tensor]]] = []
 
     # Flatten labels for easier indexing
     all_labels: torch.Tensor = full_dataset.labels[full_dataset.indices[:, 0], full_dataset.indices[:, 1]]
 
+    splits_per_class: list[tuple[list[int], list[int], list[int]]] = []
     for c in range(num_classes):
         class_indices: torch.Tensor = torch.nonzero(all_labels == c).squeeze()
 
@@ -190,16 +209,32 @@ def get_loaders(image: NDArray[np.integer|np.floating],
         if class_indices.size(0) < val_end + 1:
             error_msg: str = f"Not enough samples for class {c + 1} to allocate {train_samples_per_class} training and {val_samples_per_class} validation and at least 1 test sample.\n"
             error_msg += f"Available samples: {class_indices.size(0)}."
-            raise ValueError(error_msg) 
+            raise ValueError(error_msg)
         
-        # Augment training set
-        train_set: Subset[tuple[torch.Tensor, torch.Tensor]] = Subset(full_dataset, class_indices[:train_end].tolist())
-        augmented_train_set: TensorDataset = augment_dataset(train_set, sigma, central_region_size)
+        # Store indices for normalization and later dataset creation
+        splits_per_class.append((class_indices[:train_end].tolist(), class_indices[train_end:val_end].tolist(), class_indices[val_end:].tolist()))
 
-        # Append subsets to respective lists
-        train_sets.append(augmented_train_set)
-        val_sets.append(Subset(full_dataset, class_indices[train_end:val_end].tolist()))
-        test_sets.append(Subset(full_dataset, class_indices[val_end:].tolist()))
+    # Apply normalization if needed
+    if normalize:
+        # Gather all training samples
+        train_indices: list[int] = sum([split[0] for split in splits_per_class], [])
+        train_samples: torch.Tensor = torch.stack([full_dataset[i][0] for i in train_indices])
+
+        # Compute mean and std
+        mean: torch.Tensor = train_samples.mean(dim = (0, 2, 3))
+        std: torch.Tensor = train_samples.std(dim = (0, 2, 3))
+
+        # Set normalization for the full dataset
+        full_dataset.set_normalization(mean, std)
+
+    # Build datasets
+    train_sets: list[TensorDataset] = []
+    val_sets: list[Dataset[tuple[torch.Tensor, torch.Tensor]]] = []
+    test_sets: list[Dataset[tuple[torch.Tensor, torch.Tensor]]] = []
+    for train_indices, val_indices, test_indices in splits_per_class:
+        train_sets.append(augment_dataset(Subset(full_dataset, train_indices), sigma, central_region_size))
+        val_sets.append(Subset(full_dataset, val_indices))
+        test_sets.append(Subset(full_dataset, test_indices))
 
     # Create data loaders
     workers: int = os.cpu_count() or 1
