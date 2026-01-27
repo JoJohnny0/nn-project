@@ -144,16 +144,15 @@ def augment_dataset(dataset: Dataset[tuple[torch.Tensor, torch.Tensor]], sigma: 
         rotated_patch: torch.Tensor = reflect_rotation(x)
         augmented_samples.append(rotated_patch)
     
-    # Linear combinations
+    # Linear Summations (here we use average to keep variance stable)
     dataset_length: int = len(dataset)  # type: ignore
-    couples: NDArray[np.long] = np.random.choice(dataset_length, size = (dataset_length, 2))
-    for i, j in couples:
-        x1: torch.Tensor = dataset[i][0]
-        x2: torch.Tensor = dataset[j][0]
-        alpha: float = np.random.uniform()
-        new_x: torch.Tensor = alpha * x1 + (1 - alpha) * x2
-        augmented_samples.append(new_x)
-    
+    shuffled_indices: torch.Tensor = torch.randperm(dataset_length)
+    for i in range(-1, dataset_length -1):  # pair each sample with the next one in the shuffled order to avoid duplicates
+        x1: torch.Tensor = dataset[shuffled_indices[i]][0]
+        x2: torch.Tensor = dataset[shuffled_indices[i + 1]][0]
+        mixed_patch: torch.Tensor = (x1 + x2) / 2.0
+        augmented_samples.append(mixed_patch)
+
     # Build augmented dataset
     y: torch.Tensor = dataset[0][1]
     augmented_dataset: TensorDataset = TensorDataset(torch.stack(augmented_samples), y.repeat(len(augmented_samples)))
