@@ -11,7 +11,7 @@ from scipy.io import loadmat
 import torch
 from torch.utils.data import DataLoader
 
-from typeguard import install_import_hook # TODO: remove
+from typeguard import install_import_hook # TODO: remove before release
 install_import_hook('modules')
 
 from modules.cta_net.cta_net import CTA_Lightning
@@ -24,7 +24,7 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
     The results are logged using Weights & Biases.
 
     Args:
-        dataset (Literal['PaviaUniversity', 'IndianPine']): The dataset to use.
+        dataset (Literal['PaviaUniversity', 'IndianPines']): The dataset to use.
         seed (int|None): Random seed for reproducibility.
     """
 
@@ -113,6 +113,7 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
     # Train and test
     trainer.fit(model, train_loader, val_loader)
     trainer.test(model, test_loader, ckpt_path = 'best')
+    wandb_logger.experiment.finish()
 
 
 if __name__ == '__main__':

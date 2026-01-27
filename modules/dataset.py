@@ -72,7 +72,6 @@ class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         """
 
         self.mean = mean.view(-1, 1, 1)
-        print(std.dtype)
         self.std = std.view(-1, 1, 1).clamp(min = eps)
         
     def __len__(self: Self) -> int:
