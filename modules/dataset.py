@@ -109,13 +109,15 @@ def augment_dataset(dataset: Dataset[tuple[torch.Tensor, torch.Tensor]], sigma: 
     Args:
         dataset (Dataset[tuple[Tensor, Tensor]]): The dataset to augment.
         sigma (float): Standard deviation of the gaussian noise to add.
-        central_region_size (int): Size of the central region where no noise will be added during augmentation. Must be odd.
+        central_region_size (int): Size of the central region where no noise will be added during augmentation. Must be odd, less than the patch size.
     """
+
+    side: int = dataset[0][0].size(1)
 
     if central_region_size % 2 == 0:
         raise ValueError("Central region size must be odd.")
-
-    side: int = dataset[0][0].size(1)
+    if central_region_size < 1 or central_region_size >= side:
+        raise ValueError(f"Central region size must be in [1, {side}), got {central_region_size}.")
 
     # Mask for the gaussian noise
     mask: torch.Tensor = torch.full_like(dataset[0][0], sigma)
