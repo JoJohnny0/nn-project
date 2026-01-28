@@ -2,6 +2,7 @@ ipykernel
 kagglehub
 lightning
 matplotlib
+nbformat
 numpy
 scikit-learn
 scipy
