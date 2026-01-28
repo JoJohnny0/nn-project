@@ -15,9 +15,6 @@ from torch.utils.data import DataLoader
 from torchmetrics.functional import accuracy, cohen_kappa
 import wandb
 
-from typeguard import install_import_hook # TODO: remove before release
-install_import_hook('modules')
-
 from modules.cta_net.cta_net import CTA_Lightning
 from modules.dataset import get_loaders
 
@@ -36,18 +33,18 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
     patch_size: int = 15
     train_samples_per_class: int = 10
     val_samples_per_class: int = 5
-    sigma: float = 0.01
+    sigma: float = 0.1
     central_region_size: int = 3
 
     # Model Hyperparameters
     hidden_channels: int = 128
-    heads: int = 4
+    heads: int = 2
 
     # Training Hyperparameters
     dropout: float = 0.1
     lr: float = 8e-5
     batch_size: int = 32
-    epochs: int = 50    #150
+    epochs: int = 150
 
 
     # Set random seed
@@ -89,6 +86,7 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
                                             # Parameters not logged by the trainer
                                             config = {'train_samples_per_class': train_samples_per_class,
                                                       'val_samples_per_class': val_samples_per_class,
+                                                      'sigma': sigma,
                                                       'central_region_size': central_region_size,
                                                       'batch_size': batch_size
                                                       }
@@ -112,7 +110,11 @@ def main(dataset: Literal['PaviaUniversity', 'IndianPines'], seed: int|None = No
                                          dropout = dropout,
                                          lr = lr
                                          )
-    trainer: pl.Trainer = pl.Trainer(max_epochs = epochs, logger = wandb_logger, callbacks = save_best, log_every_n_steps = len(train_loader))
+    trainer: pl.Trainer = pl.Trainer(max_epochs = epochs,
+                                     logger = wandb_logger,
+                                     callbacks = save_best,
+                                     log_every_n_steps = len(train_loader)
+                                     )
 
     # Train and test
     trainer.fit(model, train_loader, val_loader)
