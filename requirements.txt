@@ -1,0 +1,10 @@
+kagglehub
+lightning
+matplotlib
+numpy
+scikit-learn
+scipy
+torch
+torchmetrics
+torchvision
+wandb
