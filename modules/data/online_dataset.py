@@ -25,7 +25,7 @@ class OnlineHyperspectralDataset(TensorDataset):
     """
 
     @override
-    def __init__(self: Self, x: torch.Tensor, y: torch.Tensor, augment: bool = False) -> None:
+    def __init__(self: Self, x: torch.Tensor, y: torch.Tensor, augment: bool = False, max_sigma: float = 0., central_region_size: int = 1) -> None:
         """
         Initialize the hyperspectral dataset.
 
@@ -33,10 +33,14 @@ class OnlineHyperspectralDataset(TensorDataset):
             x (Tensor): Input patches of shape (N, C, H, W).
             y (Tensor): Labels of shape (N,).
             augment (bool): Whether to apply data augmentation.
+            max_sigma (float): Maximum standard deviation for noise addition. Used only if augment is True.
+            central_region_size (int): Size of the central region to avoid noise addition. Used only if augment is True.
         """
 
         super().__init__(x, y)
         self.augment: bool = augment
+        self.max_sigma: float = max_sigma
+        self.central_region_size: int = central_region_size
 
         # Rotation transform
         side: int = x.size(2)
@@ -48,7 +52,7 @@ class OnlineHyperspectralDataset(TensorDataset):
         ])
 
         # Noise mask (to avoid adding noise in the central region)
-        border: int = (side - 3) // 2   # Central 3x3 region
+        border: int = (side - self.central_region_size) // 2
         self.noise_mask: torch.Tensor = torch.ones((side, side))
         self.noise_mask[border:-border, border:-border] = 0
 
@@ -74,7 +78,7 @@ class OnlineHyperspectralDataset(TensorDataset):
 
         # Noise
         if random.random() < 0.5:
-            sigma: float = random.uniform(0.0, 0.1)
+            sigma: float = random.uniform(0., self.max_sigma)
             noise: torch.Tensor = torch.randn_like(x) * sigma * self.noise_mask
             x = x + noise
 
@@ -94,6 +98,8 @@ def get_loaders(image: NDArray[np.integer|np.floating],
                 patch_size: int,
                 train_samples_per_class: int,
                 val_samples_per_class: int,
+                max_sigma: float,
+                central_region_size: int,
                 batch_size: int
                 ) -> tuple[DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]]]:
     """
@@ -105,6 +111,8 @@ def get_loaders(image: NDArray[np.integer|np.floating],
         patch_size (int): Size of the square patch to extract around each pixel. Must be odd.
         train_samples_per_class (int): Number of training samples per class.
         val_samples_per_class (int): Number of validation samples per class.
+        max_sigma (float): Maximum standard deviation for noise addition.
+        central_region_size (int): Size of the central region to avoid noise addition.
         batch_size (int): Batch size for the data loaders.
 
     Returns:
@@ -165,7 +173,7 @@ def get_loaders(image: NDArray[np.integer|np.floating],
     test_patches = (test_patches - mean) / std
 
     # Create datasets
-    train_dataset: OnlineHyperspectralDataset = OnlineHyperspectralDataset(train_patches, labels_tensor[train_coords])
+    train_dataset: OnlineHyperspectralDataset = OnlineHyperspectralDataset(train_patches, labels_tensor[train_coords], True, max_sigma, central_region_size)
     val_dataset: OnlineHyperspectralDataset = OnlineHyperspectralDataset(val_patches, labels_tensor[val_coords])
     test_dataset: OnlineHyperspectralDataset = OnlineHyperspectralDataset(test_patches, labels_tensor[test_coords])
 

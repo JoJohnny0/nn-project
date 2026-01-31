@@ -165,8 +165,7 @@ def get_loaders(image: NDArray[np.integer|np.floating],
                 val_samples_per_class: int,
                 sigma: float,
                 central_region_size: int,
-                batch_size: int,
-                normalize: bool = True
+                batch_size: int
                 ) -> tuple[DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]]]:
     """
     Splits and augments the dataset, returning data loaders for training, validation, and testing containing the specified number of samples per class.
@@ -180,7 +179,6 @@ def get_loaders(image: NDArray[np.integer|np.floating],
         sigma (float): Standard deviation of the gaussian noise to add for augmentation.
         central_region_size (int): Size of the central region where no noise will be added during augmentation. Must be odd.
         batch_size (int): Batch size for the data loaders.
-        normalize (bool): If True, applies per-channel z-scaling based on training samples.
 
     Returns:
         loaders (tuple[DataLoader[list[Tensor]], DataLoader[list[Tensor]], DataLoader[list[Tensor]]]): training, validation, and test data loaders.
@@ -213,18 +211,12 @@ def get_loaders(image: NDArray[np.integer|np.floating],
         # Store indices for normalization and later dataset creation
         splits_per_class.append((class_indices[:train_end].tolist(), class_indices[train_end:val_end].tolist(), class_indices[val_end:].tolist()))
 
-    # Apply normalization if needed
-    if normalize:
-        # Gather all training samples
-        train_indices: list[int] = sum([split[0] for split in splits_per_class], [])
-        train_samples: torch.Tensor = torch.stack([full_dataset[i][0] for i in train_indices])
-
-        # Compute mean and std
-        mean: torch.Tensor = train_samples.mean(dim = (0, 2, 3))
-        std: torch.Tensor = train_samples.std(dim = (0, 2, 3))
-
-        # Set normalization for the full dataset
-        full_dataset.set_normalization(mean, std)
+    # Normalize
+    train_indices: list[int] = sum([split[0] for split in splits_per_class], [])
+    train_samples: torch.Tensor = torch.stack([full_dataset[i][0] for i in train_indices])
+    mean: torch.Tensor = train_samples.mean(dim = (0, 2, 3))
+    std: torch.Tensor = train_samples.std(dim = (0, 2, 3))
+    full_dataset.set_normalization(mean, std)
 
     # Build datasets
     train_sets: list[TensorDataset] = []
