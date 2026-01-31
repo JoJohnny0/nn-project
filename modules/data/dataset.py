@@ -1,8 +1,9 @@
 """
-Module for handling hyperspectral image datasets. Implements the original dataset class without online augmentation.
+Module containing the datasets classes for hyperspectral images.
 
-Useful functions:
-    - get_loaders
+Useful classes:
+    - LazyHyperspectralDataset
+    - AugmentedHyperspectralDataset
 """
 
 from math import ceil
@@ -10,15 +11,16 @@ from typing import override, Self
 
 import numpy as np
 from numpy.typing import NDArray
+import random
 import torch
 import torch.nn.functional as F
-from torch.utils.data import ConcatDataset, DataLoader, Dataset, Subset, TensorDataset
+from torch.utils.data import Dataset, TensorDataset
 import torchvision.transforms as T
 
 
-class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
+class LazyHyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
     """
-    Class to handle hyperspectral image datasets.
+    Class to handle hyperspectral image datasets, loading patches on-the-fly.
 
     Call set_normalization(mean, std) to apply per-channel normalization.
     """
@@ -100,136 +102,71 @@ class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         return patch, label
     
 
-def augment_dataset(dataset: Dataset[tuple[torch.Tensor, torch.Tensor]], sigma: float, central_region_size: int) -> TensorDataset:
+class AugmentedHyperspectralDataset(TensorDataset):
     """
-    Applies gaussian noise, random rotations and linear combinations to augment the dataset.
-    The gaussian noise will not be applied in the central region of each patch.
-
-    Args:
-        dataset (Dataset[tuple[Tensor, Tensor]]): The dataset to augment.
-        sigma (float): Standard deviation of the gaussian noise to add.
-        central_region_size (int): Size of the central region where no noise will be added during augmentation. Must be odd, less than the patch size.
+    Class to handle hyperspectral image datasets.
+    Implements data augmentation through random rotations, noise addition (not in the central zone), and mixup.
     """
 
-    side: int = dataset[0][0].size(1)
+    @override
+    def __init__(self: Self, x: torch.Tensor, y: torch.Tensor, max_sigma: float, central_region_size: int) -> None:
+        """
+        Initialize the hyperspectral dataset.
 
-    if central_region_size % 2 == 0:
-        raise ValueError("Central region size must be odd.")
-    if central_region_size < 1 or central_region_size >= side:
-        raise ValueError(f"Central region size must be in [1, {side}), got {central_region_size}.")
+        Args:
+            x (Tensor): Input patches of shape (N, C, H, W).
+            y (Tensor): Labels of shape (N,).
+            max_sigma (float): Maximum standard deviation for noise addition.
+            central_region_size (int): Size of the central region to avoid noise addition.
+        """
 
-    # Mask for the gaussian noise
-    mask: torch.Tensor = torch.full_like(dataset[0][0], sigma)
-    border: int = (side - central_region_size) // 2
-    mask[:, border : -border, border : -border] = 0.0
+        super().__init__(x, y)
+        self.max_sigma: float = max_sigma
+        self.central_region_size: int = central_region_size
 
-    # Rotation transform
-    padding: int = ceil(side * (2**0.5 - 1) / 2)
-    reflect_rotation: T.Compose = T.Compose([
-        T.Pad(padding, padding_mode = 'reflect'),
-        T.RandomRotation(180, interpolation = T.InterpolationMode.BILINEAR),
-        T.CenterCrop(side)
-    ])
+        # Rotation transform
+        side: int = x.size(2)
+        padding: int = ceil(side * (2**0.5 - 1) / 2)
+        self.reflect_rotation: T.Compose = T.Compose([
+            T.Pad(padding, padding_mode = 'reflect'),
+            T.RandomRotation(180, interpolation = T.InterpolationMode.BILINEAR),
+            T.CenterCrop(side)
+        ])
 
-    augmented_samples: list[torch.Tensor] = []
-    for x, _ in dataset:
+        # Noise mask (to avoid adding noise in the central region)
+        border: int = (side - self.central_region_size) // 2
+        self.noise_mask: torch.Tensor = torch.ones((side, side))
+        self.noise_mask[border:-border, border:-border] = 0
 
-        augmented_samples.append(x)
+        # Store for each class the indices of its samples
+        self.class_indices: dict[int, np.ndarray] = {}
+        for c in torch.unique(y):
+            label: int = int(c.item())
+            self.class_indices[label] = np.where(y.numpy() == label)[0]
 
-        # Gaussian noise
-        noise: torch.Tensor = torch.randn_like(x) * mask
-        augmented_samples.append(x + noise)
+    @override
+    def __getitem__(self: Self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
 
-        # Rotations
-        rotated_patch: torch.Tensor = reflect_rotation(x)
-        augmented_samples.append(rotated_patch)
-    
-    # Linear Summations (here we use average to keep variance stable)
-    dataset_length: int = len(dataset)  # type: ignore
-    shuffled_indices: torch.Tensor = torch.randperm(dataset_length)
-    for i in range(-1, dataset_length -1):  # pair each sample with the next one in the shuffled order to avoid duplicates
-        x1: torch.Tensor = dataset[shuffled_indices[i]][0]
-        x2: torch.Tensor = dataset[shuffled_indices[i + 1]][0]
-        mixed_patch: torch.Tensor = (x1 + x2) / 2.0
-        augmented_samples.append(mixed_patch)
+        x: torch.Tensor
+        y: torch.Tensor
+        x, y = super().__getitem__(index)
 
-    # Build augmented dataset
-    y: torch.Tensor = dataset[0][1]
-    augmented_dataset: TensorDataset = TensorDataset(torch.stack(augmented_samples), y.repeat(len(augmented_samples)))
-    return augmented_dataset    
+        # Random rotation
+        if random.random() < 0.5:
+            x = self.reflect_rotation(x)
 
-def get_loaders(image: NDArray[np.integer|np.floating],
-                labels: NDArray[np.integer],
-                patch_size: int,
-                train_samples_per_class: int,
-                val_samples_per_class: int,
-                sigma: float,
-                central_region_size: int,
-                batch_size: int
-                ) -> tuple[DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]]]:
-    """
-    Splits and augments the dataset, returning data loaders for training, validation, and testing containing the specified number of samples per class.
+        # Noise
+        if random.random() < 0.5:
+            sigma: float = random.uniform(0., self.max_sigma)
+            noise: torch.Tensor = torch.randn_like(x) * sigma * self.noise_mask
+            x = x + noise
 
-    Args:
-        image (NDArray[integer|floating]): Hyperspectral image data of shape (H, W, C).
-        labels (NDArray[integer]): Labels of shape (H, W), where 0 indicates unlabeled pixels.
-        patch_size (int): Size of the square patch to extract around each pixel. Must be odd.
-        train_samples_per_class (int): Number of training samples per class.
-        val_samples_per_class (int): Number of validation samples per class.
-        sigma (float): Standard deviation of the gaussian noise to add for augmentation.
-        central_region_size (int): Size of the central region where no noise will be added during augmentation. Must be odd.
-        batch_size (int): Batch size for the data loaders.
+        # Mixup
+        if random.random() < 0.5:
+            class_sample_indices: NDArray[np.int64] = self.class_indices[int(y.item())]
+            mix_index: int = int(np.random.choice(class_sample_indices))
+            x2: torch.Tensor = super().__getitem__(mix_index)[0]
+            alpha: float = random.random()
+            x = alpha * x + (1 - alpha) * x2
 
-    Returns:
-        loaders (tuple[DataLoader[list[Tensor]], DataLoader[list[Tensor]], DataLoader[list[Tensor]]]): training, validation, and test data loaders.
-    """
-
-    full_dataset: HyperspectralDataset = HyperspectralDataset(image, labels, patch_size)
-    num_classes: int = int(labels.max())
-
-    # Flatten labels for easier indexing
-    all_labels: torch.Tensor = full_dataset.labels[full_dataset.indices[:, 0], full_dataset.indices[:, 1]]
-
-    splits_per_class: list[tuple[list[int], list[int], list[int]]] = []
-    for c in range(num_classes):
-        class_indices: torch.Tensor = torch.nonzero(all_labels == c).squeeze()
-
-        # Shuffle indices
-        perm: torch.Tensor = torch.randperm(class_indices.size(0))
-        class_indices = class_indices[perm]
-
-        # Select samples
-        train_end: int = train_samples_per_class
-        val_end: int = train_end + val_samples_per_class
-
-        # Error if not enough samples
-        if class_indices.size(0) < val_end + 1:
-            error_msg: str = f"Not enough samples for class {c + 1} to allocate {train_samples_per_class} training and {val_samples_per_class} validation and at least 1 test sample.\n"
-            error_msg += f"Available samples: {class_indices.size(0)}."
-            raise ValueError(error_msg)
-        
-        # Store indices for normalization and later dataset creation
-        splits_per_class.append((class_indices[:train_end].tolist(), class_indices[train_end:val_end].tolist(), class_indices[val_end:].tolist()))
-
-    # Normalize
-    train_indices: list[int] = sum([split[0] for split in splits_per_class], [])
-    train_samples: torch.Tensor = torch.stack([full_dataset[i][0] for i in train_indices])
-    mean: torch.Tensor = train_samples.mean(dim = (0, 2, 3))
-    std: torch.Tensor = train_samples.std(dim = (0, 2, 3))
-    full_dataset.set_normalization(mean, std)
-
-    # Build datasets
-    train_sets: list[TensorDataset] = []
-    val_sets: list[Dataset[tuple[torch.Tensor, torch.Tensor]]] = []
-    test_sets: list[Dataset[tuple[torch.Tensor, torch.Tensor]]] = []
-    for train_indices, val_indices, test_indices in splits_per_class:
-        train_sets.append(augment_dataset(Subset(full_dataset, train_indices), sigma, central_region_size))
-        val_sets.append(Subset(full_dataset, val_indices))
-        test_sets.append(Subset(full_dataset, test_indices))
-
-    # Create data loaders
-    train_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(train_sets), batch_size = batch_size, shuffle = True)
-    val_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(val_sets), batch_size = batch_size, shuffle = False)
-    test_loader: DataLoader[list[torch.Tensor]] = DataLoader(ConcatDataset(test_sets), batch_size = batch_size, shuffle = False)
-
-    return train_loader, val_loader, test_loader
+        return x, y
