@@ -69,7 +69,7 @@ class OnlineHyperspectralDataset(TensorDataset):
         y: torch.Tensor
         x, y = super().__getitem__(index)
 
-        if self.augment:
+        if not self.augment:
             return x, y
 
         # Random rotation
