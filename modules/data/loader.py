@@ -1,5 +1,5 @@
 """
-Data loaders for hyperspectral image datasets, including dataset expansion through augmentation.
+Module containing data loading and dataset expansion functions.
 
 Useful functions:
     - get_loaders
@@ -16,9 +16,9 @@ from torchvision import transforms as T
 from modules.data.dataset import AugmentedHyperspectralDataset, LazyHyperspectralDataset
 
 
-def expand_dataset(x: torch.Tensor, y: torch.Tensor, sigma: float, central_region_size: int) -> TensorDataset:
+def amplify_dataset(x: torch.Tensor, y: torch.Tensor, sigma: float, central_region_size: int) -> TensorDataset:
     """
-    Applies gaussian noise, random rotations and linear combinations to expand the given dataset.
+    Applies gaussian noise, random rotations and linear combinations to amplify the given dataset.
     The gaussian noise will not be applied in the central region of each patch.
 
     Args:
@@ -98,7 +98,7 @@ def get_loaders(image: NDArray[np.integer|np.floating],
                 batch_size: int
                 ) -> tuple[DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]], DataLoader[list[torch.Tensor]]]:
     """
-    Split, normalize and augment the dataset, returning data loaders for training, validation, and testing containing the specified number of samples per class.
+    Split, normalize and expand the dataset, returning data loaders for training, validation, and testing containing the specified number of samples per class.
 
     Args:
         image (NDArray[integer|floating]): Hyperspectral image data of shape (H, W, C).
@@ -106,7 +106,7 @@ def get_loaders(image: NDArray[np.integer|np.floating],
         patch_size (int): Size of the square patch to extract around each pixel. Must be odd.
         train_samples_per_class (int): Number of training samples per class.
         val_samples_per_class (int): Number of validation samples per class.
-        online_augmentation (bool): Whether to apply data augmentation online during training or to expand the dataset beforehand.
+        online_augmentation (bool): Whether to apply data augmentation online during training or to amplify the dataset beforehand.
         sigma (float): Standard deviation of the gaussian noise to add. If online_augmentation is True this is the maximum sigma for random noise addition.
         central_region_size (int): Size of the central region to avoid noise addition.
         batch_size (int): Batch size for the data loaders.
@@ -165,7 +165,7 @@ def get_loaders(image: NDArray[np.integer|np.floating],
     if online_augmentation:
         train_dataset = AugmentedHyperspectralDataset(train_tensor, train_labels, sigma, central_region_size)
     else:
-        train_dataset = expand_dataset(train_tensor, train_labels, sigma, central_region_size)
+        train_dataset = amplify_dataset(train_tensor, train_labels, sigma, central_region_size)
 
     # Lazy validation and test datasets
     val_dataset: Dataset[tuple[torch.Tensor, torch.Tensor]] = Subset(full_dataset, val_indices)
