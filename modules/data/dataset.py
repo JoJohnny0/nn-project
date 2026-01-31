@@ -1,5 +1,5 @@
 """
-Module for handling hyperspectral image datasets.
+Module for handling hyperspectral image datasets. Implements the original dataset class without online augmentation.
 
 Useful functions:
     - get_loaders
