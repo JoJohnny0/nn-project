@@ -1,5 +1,5 @@
 """
-Module containing the CTA-Net architecture.
+Module containing the CTA-net architecture.
 
 Useful classes:
     - CTA_Lightning
@@ -17,15 +17,15 @@ from modules.cta_net.attention import AttentionBlock
 from modules.cta_net.ct_mixed import CTBlock
 
 
-class CTA_Net(nn.Module):
+class CTA_net(nn.Module):
     """
-    CTA-Net Architecture.
+    CTA-net Architecture.
     """
 
     @override
     def __init__(self: Self, in_channels: int, hidden_channels: int, out_channels: int, heads: int, window_size: int, dropout: float = 0.) -> None:
         """
-        Initializes the CTA-Net Architecture.
+        Initializes the CTA-net Architecture.
 
         Args:
             in_channels (int): Number of input channels.
@@ -55,13 +55,13 @@ class CTA_Net(nn.Module):
 
 class CTA_Lightning(LightningModule):
     """
-    CTA-Net Lightning Module.
+    CTA-net Lightning Module.
     """
 
     @override
     def __init__(self: Self, in_channels: int, hidden_channels: int, out_channels: int, heads: int, window_size: int, lr: float, dropout: float = 0.) -> None:
         """
-        Initializes the CTA-Net Lightning Module.
+        Initializes the CTA-net Lightning Module.
 
         Args:
             in_channels (int): Number of input channels.
@@ -76,7 +76,7 @@ class CTA_Lightning(LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.model: CTA_Net = CTA_Net(in_channels, hidden_channels, out_channels, heads, window_size, dropout)
+        self.model: CTA_net = CTA_net(in_channels, hidden_channels, out_channels, heads, window_size, dropout)
         self.loss: nn.CrossEntropyLoss = nn.CrossEntropyLoss()
         self.accuracy: MulticlassAccuracy = MulticlassAccuracy(out_channels, average = 'micro')
 

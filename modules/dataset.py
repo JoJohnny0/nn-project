@@ -60,18 +60,18 @@ class HyperspectralDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         self.mean: torch.Tensor|None = None
         self.std: torch.Tensor|None = None
 
-    def set_normalization(self: Self, mean: torch.Tensor, std: torch.Tensor, eps: float = 1e-6) -> None:
+    def set_normalization(self: Self, mean: torch.Tensor|None, std: torch.Tensor|None, eps: float = 1e-6) -> None:
         """
         Set per-channel normalization stats.
 
         Args:
-            mean (Tensor): Mean per channel.
-            std (Tensor): Std per channel.
+            mean (Tensor|None): Mean per channel. If None, no normalization is applied.
+            std (Tensor|None): Std per channel. If None, no normalization is applied.
             eps (float): Small value to avoid division by zero in case of zero std.
         """
 
-        self.mean = mean.view(-1, 1, 1)
-        self.std = std.view(-1, 1, 1).clamp(min = eps)
+        self.mean = mean.view(-1, 1, 1) if mean is not None else None
+        self.std = std.view(-1, 1, 1).clamp(min = eps) if std is not None else None
         
     def __len__(self: Self) -> int:
         """

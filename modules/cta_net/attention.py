@@ -1,5 +1,5 @@
 """
-Module containing the Attention block for CTA-Net.
+Module containing the Attention block for CTA-net.
 
 Useful classes:
     - AttentionBlock

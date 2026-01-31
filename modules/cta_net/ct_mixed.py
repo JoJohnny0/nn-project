@@ -125,7 +125,7 @@ class RelativePositionBias(nn.Module):
         """
 
         super().__init__()
-        self.window_size: int = window_size # TODO
+        self.window_size: int = window_size
 
         # Create a parameter table of relative position biases
         self.bias_table: nn.Parameter = nn.Parameter(
@@ -134,7 +134,7 @@ class RelativePositionBias(nn.Module):
 
         # Generate position matrix
         coords_h_w: torch.Tensor = torch.arange(window_size)
-        coords: torch.Tensor = torch.stack(torch.meshgrid([coords_h_w, coords_h_w], indexing='ij')) # 2, H, W
+        coords: torch.Tensor = torch.stack(torch.meshgrid([coords_h_w, coords_h_w], indexing = 'ij'))   # 2, H, W
 
         # Pairwise relative position index
         coords = coords.flatten(1)    # 2, H*W
