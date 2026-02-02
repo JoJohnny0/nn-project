@@ -156,13 +156,13 @@ class RelativePositionBias(nn.Module):
 
 class MHSA(nn.Module):
     """
-    Multi-Head Self Attention block.
+    Multi-Head Self-Attention block.
     """
 
     @override
     def __init__(self: Self, channels: int, heads: int, window_size: int, dropout: float) -> None:
         """
-        Initializes the Multi-Head Self Attention block.
+        Initializes the Multi-Head Self-Attention block.
 
         Args:
             channels (int): Number of input and output channels.
